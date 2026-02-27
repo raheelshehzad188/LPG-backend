@@ -1,0 +1,339 @@
+{
+  "info": {
+    "name": "Lahore Property Guide - Complete API",
+    "description": "Admin, Partner aur Public APIs - sab endpoints ek collection mein",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:8000" },
+    { "key": "admin_token", "value": "" },
+    { "key": "partner_token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth",
+      "item": [
+        {
+          "name": "Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.collectionVariables.set('admin_token', json.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@lpg.com\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": "{{base_url}}/api/auth/admin/login"
+          }
+        },
+        {
+          "name": "Partner Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    pm.collectionVariables.set('partner_token', json.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ahmed@eliteproperties.com\",\n  \"password\": \"secret123\"\n}"
+            },
+            "url": "{{base_url}}/api/auth/partner/login"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Admin - Leads",
+      "item": [
+        {
+          "name": "List Leads",
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "url": "{{base_url}}/api/admin/leads",
+            "description": "Query: status, agentId, from, to"
+          }
+        },
+        {
+          "name": "Re-route Lead",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agentId\": \"A2\"\n}"
+            },
+            "url": "{{base_url}}/api/admin/leads/1/reroute"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Admin - Agents",
+      "item": [
+        {
+          "name": "List Agents",
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "url": "{{base_url}}/api/admin/agents"
+          }
+        },
+        {
+          "name": "Create Agent",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agentName\": \"Ahmed Khan\",\n  \"agencyName\": \"Elite Properties\",\n  \"email\": \"ahmed@eliteproperties.com\",\n  \"password\": \"secret123\",\n  \"phone\": \"+92 300 1234567\",\n  \"specialization\": \"DHA Phase 9, Gulberg III\",\n  \"status\": \"active\"\n}"
+            },
+            "url": "{{base_url}}/api/admin/agents"
+          }
+        },
+        {
+          "name": "Update Agent",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agentName\": \"Ahmed Khan\",\n  \"specialization\": \"DHA Phase 9, Gulberg III, Bahria\"\n}"
+            },
+            "url": "{{base_url}}/api/admin/agents/1"
+          }
+        },
+        {
+          "name": "Delete Agent",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"}
+            ],
+            "url": "{{base_url}}/api/admin/agents/2"
+          }
+        },
+        {
+          "name": "Toggle Agent Routing",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"active\": true\n}"
+            },
+            "url": "{{base_url}}/api/admin/agents/1/routing"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Admin - Scraping",
+      "item": [
+        {
+          "name": "List Scraping Sources",
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "url": "{{base_url}}/api/admin/scraping"
+          }
+        },
+        {
+          "name": "Toggle Scraping",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"active\"\n}"
+            },
+            "url": "{{base_url}}/api/admin/scraping/1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Admin - Gemini",
+      "item": [
+        {
+          "name": "Get Gemini Settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"}
+            ],
+            "url": "{{base_url}}/api/gemini"
+          }
+        },
+        {
+          "name": "Save Gemini Settings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"apiKey\": \"AIzaSy...\",\n  \"systemInstructions\": \"Tu Lahore Property Guide ka AI assistant ho...\",\n  \"conversationInstructions\": \"Ek ek question poocho...\",\n  \"model\": \"gemini-1.5-flash\"\n}"
+            },
+            "url": "{{base_url}}/api/gemini"
+          }
+        },
+        {
+          "name": "Test Gemini Connection",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"apiKey\": \"AIzaSy...\"\n}"
+            },
+            "url": "{{base_url}}/api/gemini/test"
+          }
+        },
+        {
+          "name": "Reset Gemini Instructions",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {"mode": "raw", "raw": "{}"},
+            "url": "{{base_url}}/api/gemini/reset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Public",
+      "item": [
+        {
+          "name": "Save Lead (AI Chat)",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+923001234567\",\n  \"name\": \"Web Visitor\",\n  \"context\": \"DHA Phase 9 plot | 2 crore budget\"\n}"
+            },
+            "url": "{{base_url}}/api/leads"
+          }
+        },
+        {
+          "name": "AI Conversation",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"DHA Phase 9 mein 1 kanal plot\",\n  \"messages\": [\n    {\"role\": \"user\", \"content\": \"DHA Phase 9 mein 1 kanal plot\"},\n    {\"role\": \"assistant\", \"content\": \"Aapka budget kitna hai?\"},\n    {\"role\": \"user\", \"content\": \"2 crore\"}\n  ]\n}"
+            },
+            "url": "{{base_url}}/api_new_ai"
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Partner",
+      "item": [
+        {
+          "name": "Get My Leads",
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{partner_token}}"}
+            ],
+            "url": "{{base_url}}/api/partner/leads"
+          }
+        },
+        {
+          "name": "Accept Lead",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{partner_token}}"}
+            ],
+            "url": "{{base_url}}/api/partner/leads/1/accept"
+          }
+        },
+        {
+          "name": "Reject Lead",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{partner_token}}"}
+            ],
+            "url": "{{base_url}}/api/partner/leads/1/reject"
+          }
+        },
+        {
+          "name": "Update Lead Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{partner_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"site_visit\"\n}"
+            },
+            "url": "{{base_url}}/api/partner/leads/1"
+          }
+        }
+      ]
+    }
+  ]
+}
