@@ -47,6 +47,7 @@ def list_leads(
             "leadScore": L.lead_score or 0,
             "assignedAgent": agent.agent_name if agent else "",
             "assignedAgentId": agent.id if agent else None,
+            "assignedAt": L.assigned_at.isoformat() if L.assigned_at else None,
             "status": L.status or "new",
             "aiSummary": L.ai_summary or "",
             "createdAt": L.created_at.isoformat() if L.created_at else None,

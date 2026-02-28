@@ -45,12 +45,16 @@ def get_my_leads(
         q = q.filter(Lead.status == status)
     leads = q.order_by(Lead.created_at.desc()).all()
     minutes, _ = get_lead_expire_minutes(db)
+    minutes = max(1, minutes)  # Ensure at least 1 min added
     out = []
     for l in leads:
         assigned_at = l.assigned_at
         expires_at = None
         if assigned_at and l.status == "new":
-            expires_at = (assigned_at + timedelta(minutes=minutes)).isoformat()
+            # assigned_at + admin-set minutes (DB may return naive datetime, assume UTC)
+            dt = assigned_at if assigned_at.tzinfo else assigned_at.replace(tzinfo=timezone.utc)
+            expires_dt = dt + timedelta(minutes=minutes)
+            expires_at = expires_dt.isoformat()
         out.append({
             "id": l.id if isinstance(l.id, str) else f"L{l.id}",
             "userName": l.user_name or l.name or "",
