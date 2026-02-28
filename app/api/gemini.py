@@ -6,13 +6,15 @@ import google.generativeai as genai
 
 from app.db.session import get_db
 from app.models.gemini_settings import GeminiSettings
+from app.core.config import get_gemini_model as _get_gemini_model
+from app.core.ai_engine import invalidate_gemini_cache
 from app.api.deps import get_admin_from_token
 from app.schemas.gemini import GeminiSettingsSaveRequest, GeminiTestRequest
 
 router = APIRouter(prefix="/api", tags=["Gemini"])
 
-DEFAULT_SYSTEM = "Tu Lahore Property Guide ka AI assistant ho. Users ko Lahore mein plots, houses, apartments dhundhne mein madad karo."
-DEFAULT_CONVERSATION = "Ek ek question poocho, user ki requirements samajh kar property recommend karo."
+DEFAULT_SYSTEM = "Lahore Property Guide AI. Max 1-2 lines per reply. No lists, no bullets, no long advice. Sirf short question ya jawab."
+DEFAULT_CONVERSATION = "Ek question per reply. Short. Order: type→budget→location→naam→phone."
 
 
 def _mask_key(key: str) -> str:
@@ -41,7 +43,7 @@ def get_gemini_settings(db: Session = Depends(get_db), admin=Depends(get_admin_f
         "apiKeyMasked": _mask_key(key) if key else None,
         "systemInstructions": (settings.system_instructions or DEFAULT_SYSTEM) if settings else DEFAULT_SYSTEM,
         "conversationInstructions": (settings.conversation_instructions or DEFAULT_CONVERSATION) if settings else DEFAULT_CONVERSATION,
-        "model": (settings.model or "gemini-1.5-flash") if settings else os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-flash"),
+        "model": (settings.model or _get_gemini_model()) if settings else _get_gemini_model(),
         "updatedAt": settings.updated_at.isoformat() if settings and settings.updated_at else None,
     }
 
@@ -63,6 +65,7 @@ def save_gemini_settings(data: GeminiSettingsSaveRequest, db: Session = Depends(
         settings.model = data.model
     db.commit()
     db.refresh(settings)
+    invalidate_gemini_cache()  # naye instructions ke liye cache refresh
     return {"success": True}
 
 
@@ -73,11 +76,22 @@ def test_gemini(data: GeminiTestRequest, db: Session = Depends(get_db), admin=De
         return {"success": False, "error": "No API key provided"}
     try:
         genai.configure(api_key=key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        settings = _get_settings(db)
+        model_name = (settings.model if settings else None) or _get_gemini_model()
+        if not model_name or model_name == "gemini-1.5-flash":
+            model_name = _get_gemini_model()
+        model = genai.GenerativeModel(model_name)
         model.generate_content("Hi")
-        return {"success": True, "message": "Connection successful", "model": "gemini-1.5-flash"}
+        return {"success": True, "message": "Connection successful", "model": model_name}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+@router.post("/gemini/refresh-cache")
+def refresh_gemini_cache(db: Session = Depends(get_db), admin=Depends(get_admin_from_token)):
+    """Admin cache manually refresh kare — naya property data + instructions cache ho jayega."""
+    invalidate_gemini_cache()
+    return {"success": True, "message": "Cache invalidated. Next AI request will create fresh cache."}
 
 
 @router.post("/gemini/reset")
@@ -91,6 +105,7 @@ def reset_gemini_instructions(db: Session = Depends(get_db), admin=Depends(get_a
     settings.conversation_instructions = DEFAULT_CONVERSATION
     db.commit()
     db.refresh(settings)
+    invalidate_gemini_cache()  # default instructions ke liye cache refresh
     return {
         "success": True,
         "message": "Reset to default instructions",

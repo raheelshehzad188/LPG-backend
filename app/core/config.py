@@ -1,8 +1,10 @@
+"""Central config — GEMINI_MODEL_NAME .env se fetch. Fallback sirf yahan."""
 import os
-# ... imports ...
+from dotenv import load_dotenv
 
 load_dotenv()
-MY_MODEL = os.getenv("GEMINI_MODEL_NAME", "gemini-3-flash-preview")
-print(f"DEBUG: I am trying to use model: {MY_MODEL}") # <--- YE PRINT LAGAYEIN
 
-model = genai.GenerativeModel(MY_MODEL)
+
+def get_gemini_model() -> str:
+    """Env se model — .env mein GEMINI_MODEL_NAME set karo."""
+    return (os.getenv("GEMINI_MODEL_NAME") or "").strip() or "gemini-3-flash-preview"

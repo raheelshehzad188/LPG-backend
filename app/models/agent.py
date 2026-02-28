@@ -6,7 +6,7 @@ from app.db.session import Base
 class Agent(Base):
     __tablename__ = "agents"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(50), primary_key=True, index=True)
     agent_name = Column(String(100), nullable=False)
     agency_name = Column(String(150), nullable=False)
     email = Column(String(255), unique=True, nullable=False, index=True)

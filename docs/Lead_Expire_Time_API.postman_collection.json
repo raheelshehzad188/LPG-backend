@@ -1,0 +1,143 @@
+{
+  "info": {
+    "name": "Lead Expire Time API",
+    "description": "Admin Settings + Modified Partner Leads APIs — Lead expiry feature",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "base_url", "value": "http://127.0.0.1:8000"},
+    {"key": "admin_token", "value": ""},
+    {"key": "partner_token", "value": ""}
+  ],
+  "item": [
+    {
+      "name": "1. Auth (Run First)",
+      "item": [
+        {
+          "name": "Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  pm.collectionVariables.set('admin_token', json.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@lpg.com\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": "{{base_url}}/api/auth/admin/login",
+            "description": "Get admin token for settings APIs"
+          }
+        },
+        {
+          "name": "Partner Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  pm.collectionVariables.set('partner_token', json.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ahmed@eliteproperties.com\",\n  \"password\": \"secret123\"\n}"
+            },
+            "url": "{{base_url}}/api/auth/partner/login",
+            "description": "Get partner token for leads APIs"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Admin - Settings",
+      "item": [
+        {
+          "name": "Get Admin Settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "url": "{{base_url}}/api/admin/settings",
+            "description": "Returns leadExpireMinutes (default 5) and updatedAt"
+          }
+        },
+        {
+          "name": "Save Admin Settings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{admin_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"leadExpireMinutes\": 5\n}"
+            },
+            "url": "{{base_url}}/api/admin/settings",
+            "description": "Set lead expiry time (1-60 minutes). Validation: min 1, max 60."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Partner - Leads (Modified)",
+      "item": [
+        {
+          "name": "Get Partner Leads",
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{partner_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "url": "{{base_url}}/api/partner/leads",
+            "description": "Expired leads auto-unlinked. Response includes expiresAt, assignedAt. Query: ?status=new | in_progress"
+          }
+        },
+        {
+          "name": "Accept Lead",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{partner_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "url": "{{base_url}}/api/partner/leads/L1/accept",
+            "description": "5 min (ya admin setting) ke andar accept karna zaroori. Expired → 410 Gone"
+          }
+        },
+        {
+          "name": "Reject Lead",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{partner_token}}"}
+            ],
+            "url": "{{base_url}}/api/partner/leads/L1/reject"
+          }
+        }
+      ]
+    }
+  ]
+}

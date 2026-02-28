@@ -10,5 +10,5 @@ class GeminiSettings(Base):
     api_key = Column(String(255), nullable=True)  # Encrypted/stored, null = use env
     system_instructions = Column(Text, nullable=True)
     conversation_instructions = Column(Text, nullable=True)
-    model = Column(String(50), default="gemini-1.5-flash")
+    model = Column(String(50), nullable=True)  # env se — get_gemini_model()
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

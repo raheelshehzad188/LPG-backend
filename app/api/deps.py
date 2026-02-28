@@ -40,7 +40,8 @@ def get_agent_from_token(
     agent_id = payload.get("sub")
     if not agent_id:
         raise HTTPException(status_code=401, detail="Invalid token")
-    agent = db.query(Agent).filter(Agent.id == int(agent_id)).first()
+    agent_id = str(agent_id)
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         raise HTTPException(status_code=401, detail="Agent not found")
     return agent

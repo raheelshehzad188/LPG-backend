@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -15,7 +16,7 @@ def list_leads(
     db: Session = Depends(get_db),
     admin=Depends(get_admin_from_token),
     status: str | None = Query(None),
-    agent_id: int | None = Query(None, alias="agentId"),
+    agent_id: str | None = Query(None, alias="agentId"),
     from_date: str | None = Query(None, alias="from"),
     to_date: str | None = Query(None, alias="to"),
 ):
@@ -23,7 +24,9 @@ def list_leads(
     if status:
         q = q.filter(Lead.status == status)
     if agent_id:
-        q = q.filter(Lead.assigned_agent_id == agent_id)
+        sid = str(agent_id)
+        aid_val = sid[1:] if sid.startswith("A") else sid  # Strip leading "A" to match DB value
+        q = q.filter(Lead.assigned_agent_id == aid_val)
     if from_date:
         q = q.filter(Lead.created_at >= from_date)
     if to_date:
@@ -33,7 +36,7 @@ def list_leads(
     for L in leads:
         agent = db.query(Agent).filter(Agent.id == L.assigned_agent_id).first() if L.assigned_agent_id else None
         out.append({
-            "id": f"L{L.id}",
+            "id": L.id if isinstance(L.id, str) else f"L{L.id}",
             "userName": L.user_name or L.name or "",
             "name": L.name or L.user_name or "",
             "phone": L.phone or "",
@@ -43,7 +46,7 @@ def list_leads(
             "budget": L.budget or "",
             "leadScore": L.lead_score or 0,
             "assignedAgent": agent.agent_name if agent else "",
-            "assignedAgentId": f"A{agent.id}" if agent else None,
+            "assignedAgentId": agent.id if agent else None,
             "status": L.status or "new",
             "aiSummary": L.ai_summary or "",
             "createdAt": L.created_at.isoformat() if L.created_at else None,
@@ -58,25 +61,29 @@ def reroute_lead(
     db: Session = Depends(get_db),
     admin=Depends(get_admin_from_token),
 ):
-    lid = int(lead_id.replace("L", "")) if isinstance(lead_id, str) and lead_id.startswith("L") else int(lead_id)
+    lid = str(lead_id)
     lead = db.query(Lead).filter(Lead.id == lid).first()
+    if not lead and lid.startswith("L"):
+        lead = db.query(Lead).filter(Lead.id == lid[1:]).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     aid = data.agent_id
-    if aid is None and data.agentId:
-        aid = int(str(data.agentId).replace("A", ""))
+    if aid is None and data.agentId is not None:
+        sid = str(data.agentId)
+        aid = sid[1:] if sid.startswith("A") else sid  # Strip only leading "A", not all A's
     if aid is None:
         raise HTTPException(status_code=400, detail="agentId required")
-    agent = db.query(Agent).filter(Agent.id == aid).first()
+    agent = db.query(Agent).filter(Agent.id == str(aid)).first()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     lead.assigned_agent_id = agent.id
+    lead.assigned_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(lead)
     return {
         "success": True,
         "lead": {
-            "id": f"L{lead.id}",
+            "id": lead.id if isinstance(lead.id, str) else f"L{lead.id}",
             "assignedAgentId": f"A{agent.id}",
             "assignedAgent": agent.agent_name,
         },

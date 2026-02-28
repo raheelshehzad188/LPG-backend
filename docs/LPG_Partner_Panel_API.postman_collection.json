@@ -1,0 +1,156 @@
+{
+  "info": {
+    "name": "LPG Partner Panel API",
+    "description": "Lahore Property Guide - Partner/Agent Panel APIs. Pehle Partner Login chalao, token auto-save ho jayega. Phir leads, accept, reject, update.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "baseUrl", "value": "http://127.0.0.1:8000"},
+    {"key": "partnerToken", "value": ""},
+    {"key": "leadId", "value": "L1"}
+  ],
+  "item": [
+    {
+      "name": "1. Auth",
+      "item": [
+        {
+          "name": "Partner Login",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "if (pm.response.code === 200) {",
+                "  var json = pm.response.json();",
+                "  pm.collectionVariables.set('partnerToken', json.token);",
+                "}"
+              ]
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ahmed@eliteproperties.com\",\n  \"password\": \"secret123\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/partner/login",
+            "description": "Agent login - token milega. Token ko Authorization: Bearer {{partnerToken}} mein use karo."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. My Leads",
+      "item": [
+        {
+          "name": "Get My Leads (All)",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{partnerToken}}"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/partner/leads",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "partner", "leads"]
+            },
+            "description": "Agent ki assigned leads list - sirf jinki assigned_agent_id = logged-in agent"
+          }
+        },
+        {
+          "name": "Get My Leads (status=new)",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{partnerToken}}"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/partner/leads?status=new",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "partner", "leads"],
+              "query": [{"key": "status", "value": "new"}]
+            }
+          }
+        },
+        {
+          "name": "Get My Leads (status=in_progress)",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{partnerToken}}"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/partner/leads?status=in_progress",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "partner", "leads"],
+              "query": [{"key": "status", "value": "in_progress"}]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Accept Lead",
+      "item": [
+        {
+          "name": "Accept Lead",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{partnerToken}}"}],
+            "url": "{{baseUrl}}/api/partner/leads/{{leadId}}/accept",
+            "description": "New lead accept - status new -> in_progress. 5 min ke andar accept karna zaroori."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Reject Lead",
+      "item": [
+        {
+          "name": "Reject Lead",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{partnerToken}}"}],
+            "url": "{{baseUrl}}/api/partner/leads/{{leadId}}/reject",
+            "description": "Lead reject - lead pool mein chali jayegi (next agent ko assign ho sakti hai)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Update Lead (Next Stage)",
+      "item": [
+        {
+          "name": "Update Lead - In Progress",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{partnerToken}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"status\": \"in_progress\"\n}"},
+            "url": "{{baseUrl}}/api/partner/leads/{{leadId}}"
+          }
+        },
+        {
+          "name": "Update Lead - Site Visit",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{partnerToken}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"status\": \"site_visit\"\n}"},
+            "url": "{{baseUrl}}/api/partner/leads/{{leadId}}"
+          }
+        },
+        {
+          "name": "Update Lead - Closed",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{partnerToken}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"status\": \"closed\"\n}"},
+            "url": "{{baseUrl}}/api/partner/leads/{{leadId}}"
+          }
+        }
+      ]
+    }
+  ]
+}
