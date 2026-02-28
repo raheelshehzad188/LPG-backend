@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI, Request, Depends
 from fastapi.responses import Response
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -65,6 +68,11 @@ def startup_migration():
         _run_migrations()
     except Exception:
         pass  # Non-fatal - app runs even if migration fails
+
+# Property images — /property/48012653_cover.jpg -> property_images/48012653_cover.jpg
+_property_images_dir = Path(__file__).resolve().parent / "property_images"
+if _property_images_dir.exists():
+    app.mount("/property", StaticFiles(directory=str(_property_images_dir)), name="property")
 
 # Include routers
 app.include_router(auth_router)

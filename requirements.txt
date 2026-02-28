@@ -1,5 +1,6 @@
 fastapi
 uvicorn
+a2wsgi
 sqlalchemy
 pymysql
 google-generativeai

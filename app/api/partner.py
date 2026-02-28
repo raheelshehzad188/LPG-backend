@@ -84,13 +84,18 @@ def accept_lead(
     lead = db.query(Lead).filter(Lead.id == lid, agent_match).first()
     if not lead and lid.startswith("L"):
         lead = db.query(Lead).filter(Lead.id == lid[1:], agent_match).first()
+    if not lead and lid.startswith("LD"):
+        lead = db.query(Lead).filter(Lead.id == lid[2:], agent_match).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     # Expiry check: if status=new and past expiry -> unlink and return 410
     if lead.status == "new" and lead.assigned_at:
         minutes, _ = get_lead_expire_minutes(db)
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
-        if lead.assigned_at < cutoff:
+        assigned_at = lead.assigned_at
+        if assigned_at.tzinfo is None:
+            assigned_at = assigned_at.replace(tzinfo=timezone.utc)
+        if assigned_at < cutoff:
             lead.assigned_agent_id = None
             lead.assigned_at = None
             db.commit()
@@ -118,6 +123,8 @@ def reject_lead(
     lead = db.query(Lead).filter(Lead.id == lid, agent_match).first()
     if not lead and lid.startswith("L"):
         lead = db.query(Lead).filter(Lead.id == lid[1:], agent_match).first()
+    if not lead and lid.startswith("LD"):
+        lead = db.query(Lead).filter(Lead.id == lid[2:], agent_match).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     lead.assigned_agent_id = None
@@ -139,6 +146,8 @@ def update_lead_status(
     lead = db.query(Lead).filter(Lead.id == lid, agent_match).first()
     if not lead and lid.startswith("L"):
         lead = db.query(Lead).filter(Lead.id == lid[1:], agent_match).first()
+    if not lead and lid.startswith("LD"):
+        lead = db.query(Lead).filter(Lead.id == lid[2:], agent_match).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     if data.status not in ("new", "in_progress", "site_visit", "closed"):

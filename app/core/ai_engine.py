@@ -29,7 +29,8 @@ MIN_CACHE_TOKENS = int(os.getenv("GEMINI_MIN_CACHE_TOKENS", "32768"))  # Gemini 
 def invalidate_gemini_cache(delete_on_api: bool = True):
     """Admin ke instructions update hone par call — purana cache hatake naya banaega.
     delete_on_api=True: Gemini API par se bhi delete try karega."""
-    global _cached_prompt_cache, _cached_prompt_expiry
+    global _cached_prompt_cache, _cached_prompt_expiry, _area_summary_cache
+    _area_summary_cache = ("", 0.0)
     if _cached_prompt_cache and delete_on_api:
         try:
             _cached_prompt_cache.delete()
@@ -38,38 +39,86 @@ def invalidate_gemini_cache(delete_on_api: bool = True):
     _cached_prompt_cache = None
     _cached_prompt_expiry = None
 
-LEAD_COLLECT_PROMPT = """Tu Lahore Property Guide ka AI assistant ho.
+LEAD_COLLECT_PROMPT = """Tu Lahore Property Guide ka AI assistant ho. Tumhara maqsad: user ki baat se properties filter karna.
 
-CRITICAL — Reply SHORT rakho:
-- Max 1-2 SENTENCES. Zyada mat likho.
-- Lists mat banao. Bullet points mat do. Details mat do.
-- Sirf seedha jawab ya 1 question.
+CRITICAL — TU FILTER/SQL decide karega, hum hardcode nahi karte:
+- area: User ne jo bhi area bola (DHA, Bahria, Canal Garden, Phase 6, koi bhi) — exact wahi likho
+- type: plot / house / flat — user ne jo bola
+- budget_max_lac: budget in lakh (2 crore=200, 50 lac=50)
 
-Order maintain karo:
-   Step 1: Kya chahte ho? (plot/house/flat)
-   Step 2: Budget kitna? (lac/crore)
-   Step 3: Location? (DHA/Bahria)
-   Step 4: Naam?
-   Step 5: WhatsApp number?
-- Ek waqt pe SIRF 1 question. Lists, advice, tips mat do.
-- Jab naam+phone mil jaye: reply end mein LEAD_COLLECTED:{"name":"...","phone":"...","budget":"...","interest":"..."}
-- Plain text. ```json mat use karo.
-- Kabhi 3+ lines mat likho. No ###, no bullets.
-- FILTER_CRITERIA: jab user ne bataya ho, reply end: FILTER_CRITERIA:{"area":"DHA","type":"plot","budget_max_lac":500}
+FILTER FLOW:
+1. "sab/saari properties dikhao" → FILTER_CRITERIA:{} (empty = SELECT * sab properties)
+2. Area bola (koi bhi) → FILTER_CRITERIA:{"area":"<user ka exact area>"}
+3. Type + budget add karte jao → FILTER_CRITERIA:{"area":"...","type":"plot","budget_max_lac":200}
+
+Rules:
+- area mein koi bhi location ho sakti hai — DHA Phase 9, Canal Garden, XYZ — jo user ne bola woh likho
+- Har reply end: FILTER_CRITERIA:{"area":"...","type":"...","budget_max_lac":...}
+- Max 1-2 sentences. No bullets. Jab naam+phone: LEAD_COLLECTED:{"name":"...","phone":"...","budget":"...","interest":"..."}
 """
 
 
+DB_SCHEMA_SUMMARY = """properties: id, title, location_name, price(rupees), area_size, type, cover_photo, bedrooms, baths. SQL: WHERE location_name LIKE '%area%' AND type LIKE '%type%' AND price<=budget_max_lac*100000. 50 lac=50*100000=5000000."""
+
+# Default filter jab koi filter na ho — Johar Town, flat, 3 lac (300000)
+DEFAULT_FILTER_CRITERIA = {"area": "Johar Town", "type": "flat", "budget_max_lac": 3}
+
+
+# Area summary cache — 60s TTL, extra DB query avoid
+_area_summary_cache = ("", 0.0)
+AREA_SUMMARY_TTL_SEC = 60
+
+
+def _get_area_price_summary(db) -> str:
+    """Har area ke liye count + price range. 60s cache — response time slow nahi hoga."""
+    global _area_summary_cache
+    now_ts = datetime.datetime.now(datetime.timezone.utc).timestamp()
+    if _area_summary_cache[0] and (now_ts - _area_summary_cache[1]) < AREA_SUMMARY_TTL_SEC:
+        return _area_summary_cache[0]
+    try:
+        from sqlalchemy import func
+        from app.models.property import Property
+        rows = (
+            db.query(
+                Property.location_name,
+                func.count(Property.id).label("cnt"),
+                func.min(Property.price).label("min_p"),
+                func.max(Property.price).label("max_p"),
+            )
+            .filter(Property.location_name.isnot(None), Property.location_name != "")
+            .group_by(Property.location_name)
+            .all()
+        )
+        parts = []
+        for loc, cnt, min_p, max_p in rows:
+            min_cr = (float(min_p or 0) / 1e7)
+            max_cr = (float(max_p or 0) / 1e7)
+            parts.append(f"{loc}: {cnt} properties, {min_cr:.1f} se {max_cr:.1f} crore")
+        result = " | ".join(parts) if parts else "No areas"
+        _area_summary_cache = (result, now_ts)
+        return result
+    except Exception:
+        return _area_summary_cache[0] or ""
+
+
 def _get_property_data_for_cache(db) -> str:
-    """Property data — 32k min ke liye pad kiya jayega. Use this to filter/recommend."""
+    """Property data — 32k min ke liye pad kiya jayega. Pehle area summary + schema, phir listing."""
     try:
         from app.models.property import Property
+        area_summary = _get_area_price_summary(db)
+        header = (
+            "--- AVAILABLE DATA ---\n"
+            f"Areas & ranges (DB se): {area_summary}\n"
+            f"DB schema: {DB_SCHEMA_SUMMARY}\n"
+            "--- Property listings (location_name|type|title|price_lac|area_size) ---\n"
+        )
         rows = db.query(Property).limit(500).all()
         if not rows:
-            return _CACHE_FILLER
+            return header + _CACHE_FILLER
         lines = []
         for p in rows:
             lines.append(f"{p.location_name or ''} | {p.type or ''} | {p.title or ''} | {float(p.price or 0)/100000:.0f} lac | {p.area_size or ''}")
-        return "\n".join(lines) + "\n" + _CACHE_FILLER
+        return header + "\n".join(lines) + "\n" + _CACHE_FILLER
     except Exception:
         return _CACHE_FILLER
 
@@ -180,53 +229,120 @@ def _extract_filter_criteria(text: str) -> dict:
     return {}
 
 
-def _build_filter_from_context(context: list) -> dict:
-    """Conversation se area, type, budget extract karo."""
+def _build_filter_from_context(context: list, db=None) -> dict:
+    """Conversation se area, type, budget. area = DB se jo match kare ya Gemini output — koi hardcoded list nahi."""
+    full = " ".join([str(c.get("content", "")) for c in context])
+    full_lower = full.lower()
+    # "sab dikhao", "saari properties" → no filter
+    all_phrases = [
+        "saari properties", "sab properties", "all properties", "sari properties",
+        "sab dikhao", "saari dikhao", "lahore ki saari", "lahore ki sab",
+        "sab properties dikhao", "saari properties dikhao",
+        "sab lahore", "saari lahore", "sab options", "saari options",
+    ]
+    if any(p in full_lower for p in all_phrases):
+        return {}
     fc = {}
-    full = " ".join([str(c.get("content", "")) for c in context]).lower()
-    areas = [("dha", "DHA"), ("bahria", "Bahria"), ("gulberg", "Gulberg"), ("model town", "Model Town"), ("johar", "Johar")]
-    for k, v in areas:
-        if k in full:
-            fc["area"] = v
-            break
-    if "plot" in full:
+    # Area: DB se distinct locations, jo context mein hai woh use karo (koi hardcoded list nahi)
+    if db:
+        try:
+            from app.models.property import Property
+            areas_in_db = [r[0] for r in db.query(Property.location_name).distinct().all() if r[0] and str(r[0]).strip()]
+            for loc in areas_in_db:
+                if loc and loc.lower() in full_lower:
+                    fc["area"] = loc
+                    break
+        except Exception:
+            pass
+    # Agar DB se na mila to minimal fallback (db=None ya query fail)
+    if not fc.get("area"):
+        m = re.search(r"\b(dha|bahria|gulberg|canal garden|park view|college road)\b", full_lower)
+        if m:
+            fc["area"] = m.group(1).strip().title()
+    if "plot" in full_lower:
         fc["type"] = "plot"
-    elif "house" in full or "home" in full:
+    elif "house" in full_lower or "home" in full_lower:
         fc["type"] = "house"
-    elif "flat" in full or "apartment" in full:
+    elif "flat" in full_lower or "apartment" in full_lower:
         fc["type"] = "flat"
-    # Budget: "2 crore" -> 200 lac, "50 lac" -> 50
-    m = re.search(r"(\d+)\s*(crore|cr)", full)
+    m = re.search(r"(\d+)\s*(crore|cr)", full_lower)
     if m:
         fc["budget_max_lac"] = int(m.group(1)) * 100
     else:
-        m = re.search(r"(\d+)\s*(lac|lakh|lk)", full)
+        m = re.search(r"(\d+)\s*(lac|lakh|lk)", full_lower)
         if m:
             fc["budget_max_lac"] = int(m.group(1))
     return fc
 
 
+def _build_sql_desc(use_area: bool, use_type: bool, use_budget: bool, filter_criteria: dict) -> str:
+    """Human-readable SQL description for the filter applied. MySQL: LIKE (case-insensitive), price in rupees."""
+    conds = []
+    if use_area and filter_criteria.get("area"):
+        a = str(filter_criteria["area"]).strip()
+        conds.append(f"location_name LIKE '%{a}%'")
+    if use_type and filter_criteria.get("type"):
+        t = str(filter_criteria["type"]).strip()
+        conds.append(f"type LIKE '%{t}%'")
+    if use_budget and filter_criteria.get("budget_max_lac") is not None:
+        lac = filter_criteria["budget_max_lac"]
+        conds.append(f"price <= {int(float(lac)*100000)}")  # 50 lac = 5000000 rupees
+    where = " AND ".join(conds) if conds else "1=1"
+    return f"SELECT id,title,location_name,price,area_size,type,cover_photo,bedrooms,baths FROM properties WHERE {where} ORDER BY created_at DESC LIMIT 20"
+
+
 def _fetch_properties(db, filter_criteria: dict, limit: int = 20):
-    """Filter criteria se properties fetch karo. area, type, budget_max_lac."""
+    """Filter criteria se properties fetch karo. Returns (listings, sql_executed).
+    Fallback: agar strict filter se 0 aaye to relaxed try (area+budget, area only, budget only, sab)."""
     from app.models.property import Property
 
-    q = db.query(Property)
-    if filter_criteria:
-        area = filter_criteria.get("area")
-        if area and str(area).strip():
-            q = q.filter(Property.location_name.ilike(f"%{str(area).strip()}%"))
-        ptype = filter_criteria.get("type")
-        if ptype and str(ptype).strip():
-            q = q.filter(Property.type.ilike(f"%{str(ptype).strip()}%"))
-        budget_lac = filter_criteria.get("budget_max_lac")
-        if budget_lac is not None:
-            try:
-                max_rupees = float(budget_lac) * 100000
-                q = q.filter(Property.price <= max_rupees)
-            except (TypeError, ValueError):
-                pass
-    rows = q.order_by(Property.created_at.desc()).limit(limit).all()
-    return [
+    def _do_query(use_area=True, use_type=True, use_budget=True):
+        q = db.query(Property)
+        if filter_criteria:
+            if use_area:
+                area = filter_criteria.get("area")
+                if area and str(area).strip():
+                    q = q.filter(Property.location_name.ilike(f"%{str(area).strip()}%"))
+            if use_type:
+                ptype = filter_criteria.get("type")
+                if ptype and str(ptype).strip():
+                    q = q.filter(Property.type.ilike(f"%{str(ptype).strip()}%"))
+            if use_budget:
+                budget_lac = filter_criteria.get("budget_max_lac")
+                if budget_lac is not None:
+                    try:
+                        max_rupees = float(budget_lac) * 100000
+                        q = q.filter(Property.price <= max_rupees)
+                    except (TypeError, ValueError):
+                        pass
+        return q.order_by(Property.created_at.desc()).limit(limit).all()
+
+    sql_executed = ""
+    rows = _do_query(use_area=True, use_type=True, use_budget=True)
+    sql_executed = _build_sql_desc(True, True, True, filter_criteria or {})
+
+    if not rows and filter_criteria and filter_criteria.get("type"):
+        rows = _do_query(use_area=True, use_type=False, use_budget=True)
+        sql_executed = _build_sql_desc(True, False, True, filter_criteria)
+    if not rows and filter_criteria and filter_criteria.get("area"):
+        rows = _do_query(use_area=True, use_type=False, use_budget=False)
+        sql_executed = _build_sql_desc(True, False, False, filter_criteria)
+    if not rows:
+        rows = _do_query(use_area=False, use_type=False, use_budget=True)
+        sql_executed = _build_sql_desc(False, False, True, filter_criteria)
+    if not rows:
+        rows = _do_query(use_area=False, use_type=False, use_budget=False)
+        sql_executed = _build_sql_desc(False, False, False, filter_criteria)
+
+    def _photo_url(val):
+        if not val or not str(val).strip():
+            return ""
+        v = str(val).strip()
+        if v.startswith(("http://", "https://", "/")):
+            return v
+        return f"/property/{v}"
+
+    listings = [
         {
             "id": p.id,
             "title": p.title or "",
@@ -234,12 +350,13 @@ def _fetch_properties(db, filter_criteria: dict, limit: int = 20):
             "price": float(p.price) if p.price else 0,
             "area_size": p.area_size or "",
             "type": p.type or "",
-            "cover_photo": p.cover_photo or "",
+            "cover_photo": _photo_url(p.cover_photo),
             "bedrooms": p.bedrooms,
             "baths": p.baths,
         }
         for p in rows
     ]
+    return listings, sql_executed
 
 
 def _parse_gemini_json_response(text: str):
@@ -302,11 +419,15 @@ async def get_ai_response(query: str, messages: list, thread_id: str = None, db=
         return {
             "question": "API Key missing in .env file",
             "listings": [],
+            "properties": [],
             "message": "",
             "lead_info": None,
             "lead_id": None,
             "lead_collected": {},
             "filter_criteria": {},
+            "sql_executed": "",
+            "area_summary": "",
+            "db_schema": DB_SCHEMA_SUMMARY,
         }
 
     # 1. Load/store messages by thread_id
@@ -416,12 +537,24 @@ async def get_ai_response(query: str, messages: list, thread_id: str = None, db=
         if fc2:
             filter_criteria = {**filter_criteria, **{k: v for k, v in fc2.items() if v is not None}}
         if not filter_criteria:
-            filter_criteria = _build_filter_from_context(context)
+            filter_criteria = _build_filter_from_context(context, db=db)
+        # Default: DHA, house, 50 lac — jab na user ne kuch bola na context se mila (sab dikhao exclude)
+        if not filter_criteria:
+            ctx_text = " ".join([str(c.get("content", "")).lower() for c in context])
+            show_all = any(p in ctx_text for p in [
+                "sab dikhao", "saari dikhao", "sab properties", "saari properties",
+                "all properties", "sab lahore", "saari lahore", "sab options", "saari options"
+            ])
+            if not show_all:
+                filter_criteria = DEFAULT_FILTER_CRITERIA.copy()
 
         # 2.7 Properties fetch — filter_criteria se (empty = sab dikhao)
         listings = []
+        sql_executed = ""
+        area_summary = ""
         if db:
-            listings = _fetch_properties(db, filter_criteria)
+            listings, sql_executed = _fetch_properties(db, filter_criteria)
+            area_summary = _get_area_price_summary(db)
 
         # 3. Extract lead (prefer parsed_lead, then JSON, else regex)
         lead_info = None
@@ -480,13 +613,29 @@ async def get_ai_response(query: str, messages: list, thread_id: str = None, db=
         return {
             "question": question,
             "listings": listings,
+            "properties": listings,  # alias — frontend bhi use kar sakta
             "message": "",
             "lead_info": lead_info,
             "lead_id": lead_id,
             "lead_collected": lead_info or parsed_lead or {},
-            "filter_criteria": filter_criteria,
+            "filter_criteria": {},  # msg mein nahi dikhana
+            "sql_executed": "",  # msg mein nahi dikhana
+            "area_summary": area_summary,
+            "db_schema": DB_SCHEMA_SUMMARY,
         }
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return {"question": f"Error: {str(e)}", "listings": [], "message": "", "lead_info": None, "lead_id": None, "lead_collected": {}, "filter_criteria": {}}
+        return {
+            "question": f"Error: {str(e)}",
+            "listings": [],
+            "properties": [],
+            "message": "",
+            "lead_info": None,
+            "lead_id": None,
+            "lead_collected": {},
+            "filter_criteria": {},
+            "sql_executed": "",
+            "area_summary": "",
+            "db_schema": DB_SCHEMA_SUMMARY,
+        }
