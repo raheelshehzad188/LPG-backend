@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request, Depends
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,24 @@ from app.api.leads_public import router as leads_public_router
 from app.api.partner import router as partner_router
 
 app = FastAPI(title="Lahore Property Guide API")
+
+
+@app.middleware("http")
+async def add_noindex_header(request: Request, call_next):
+    """Prevent Google/search engines from indexing this API."""
+    response = await call_next(request)
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return response
+
+
+@app.get("/robots.txt", include_in_schema=False)
+async def robots_txt():
+    """Tell crawlers not to index this site."""
+    return Response(
+        content="User-agent: *\nDisallow: /\n",
+        media_type="text/plain",
+    )
+
 
 # CORS Fix for Frontend
 app.add_middleware(
